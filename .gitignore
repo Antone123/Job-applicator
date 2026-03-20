@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Personal data / generated files
+data/
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

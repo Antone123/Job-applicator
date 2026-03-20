@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Job Applicator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  [x-cloak] { display: none !important; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+</style>
+</head>
+
+<body class="bg-slate-100 min-h-screen font-sans text-slate-800" x-data="app()" x-init="init()" x-cloak>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">JA</div>
+        <span class="font-semibold text-slate-900">Job Applicator</span>
+        <span class="text-slate-400 text-sm hidden md:block">— Antone Martin</span>
+      </div>
+      <!-- View toggle -->
+      <div class="flex gap-1 bg-slate-100 rounded-lg p-1 ml-2">
+        <button @click="view = 'jobs'"
+          :class="view === 'jobs' ? 'bg-white shadow-sm text-slate-900 font-medium' : 'text-slate-500 hover:text-slate-700'"
+          class="px-3 py-1 rounded-md text-sm transition">Jobs</button>
+        <button @click="view = 'resume'; loadProfileForEdit()"
+          :class="view === 'resume' ? 'bg-white shadow-sm text-slate-900 font-medium' : 'text-slate-500 hover:text-slate-700'"
+          class="px-3 py-1 rounded-md text-sm transition">My Resume</button>
+      </div>
+    </div>
+
+    <!-- Jobs view actions -->
+    <div x-show="view === 'jobs'" class="flex items-center gap-2">
+      <button @click="clearJobs()"
+        class="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1.5 rounded-lg hover:bg-red-50 transition">
+        Clear All
+      </button>
+      <button @click="startScan()"
+        :disabled="scanRunning"
+        :class="scanRunning ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'"
+        class="text-white text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2">
+        <svg x-show="!scanRunning" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+        </svg>
+        <svg x-show="scanRunning" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3"/>
+        </svg>
+        <span x-text="scanRunning ? 'Scanning...' : 'Scan Jobs'"></span>
+      </button>
+      <button @click="loadJobs(); loadStats()" class="text-slate-500 hover:text-slate-800 p-2 rounded-lg hover:bg-slate-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Resume view actions -->
+    <div x-show="view === 'resume'" class="flex items-center gap-2">
+      <button @click="downloadResume()"
+        class="bg-slate-700 hover:bg-slate-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+        Download PDF
+      </button>
+      <button @click="saveProfile()"
+        class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+        Save Profile
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- JOBS VIEW                                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div x-show="view === 'jobs'">
+
+  <!-- Scan log -->
+  <div x-show="scanRunning || scanMessages.length > 0"
+       class="bg-slate-900 text-green-400 text-xs font-mono px-6 py-3 max-h-44 overflow-y-auto border-b border-slate-700"
+       x-ref="scanLog">
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-slate-400 text-[10px] uppercase tracking-wider">Scan Log — Quick Apply only · 70%+ match · Senior / PR roles filtered</span>
+      <button @click="scanMessages = []" class="text-slate-500 hover:text-slate-300 text-[10px]">Clear</button>
+    </div>
+    <template x-for="(msg, i) in scanMessages" :key="i">
+      <div x-text="msg"></div>
+    </template>
+    <div x-show="scanRunning" class="text-yellow-400 mt-1 animate-pulse">▌ Scanning…</div>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap gap-6 text-sm">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-slate-400"></div>
+        <span class="text-slate-500">Total</span>
+        <span class="font-semibold" x-text="stats.total || 0"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-indigo-500"></div>
+        <span class="text-slate-500">Ready to Apply</span>
+        <span class="font-semibold text-indigo-700" x-text="stats.ready || 0"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+        <span class="text-slate-500">Applied</span>
+        <span class="font-semibold text-green-700" x-text="stats.applied || 0"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-slate-300"></div>
+        <span class="text-slate-500">Skipped</span>
+        <span class="font-semibold text-slate-400" x-text="stats.skipped || 0"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="max-w-7xl mx-auto px-6 py-6 flex gap-6">
+
+    <!-- Job list -->
+    <div class="flex-1 min-w-0">
+
+      <!-- Filter tabs -->
+      <div class="flex gap-1 mb-4 bg-white rounded-xl border border-slate-200 p-1 w-fit">
+        <template x-for="tab in tabs" :key="tab.key">
+          <button @click="activeTab = tab.key; loadJobs()"
+            :class="activeTab === tab.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+            class="px-4 py-1.5 rounded-lg text-sm font-medium transition"
+            x-text="tab.label">
+          </button>
+        </template>
+      </div>
+
+      <!-- Search -->
+      <div class="mb-4">
+        <input type="text" x-model="searchQuery" placeholder="Filter by title or company..."
+          class="w-full md:w-80 px-4 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+
+      <!-- Empty state -->
+      <template x-if="filteredJobs.length === 0">
+        <div class="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+          <p class="text-4xl mb-3">🔍</p>
+          <p class="font-medium" x-text="jobs.length === 0
+            ? 'No jobs yet — click Scan Jobs to get started.'
+            : 'No jobs match the current filter.'"></p>
+        </div>
+      </template>
+
+      <!-- Job cards -->
+      <div class="space-y-3">
+        <template x-for="job in filteredJobs" :key="job.id">
+          <div @click="openPanel(job)"
+            :class="selectedJob && selectedJob.id === job.id
+              ? 'ring-2 ring-indigo-500 border-indigo-200'
+              : 'border-slate-200 hover:border-slate-300'"
+            class="bg-white rounded-xl border p-4 cursor-pointer transition">
+
+            <div class="flex items-start gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-semibold text-slate-900 text-sm" x-text="job.title"></h3>
+                  <span :class="statusBadgeClass(job.status)"
+                    class="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+                    x-text="statusLabel(job.status)"></span>
+                </div>
+                <p class="text-slate-500 text-xs mt-0.5">
+                  <span x-text="job.company"></span> · <span x-text="job.location"></span>
+                  <template x-if="job.salary"><span> · <span x-text="job.salary"></span></span></template>
+                  <template x-if="job.employment_type"><span> · <span x-text="job.employment_type"></span></span></template>
+                </p>
+
+                <!-- ATS bar -->
+                <div x-show="job.ats_score != null" class="mt-2">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700"
+                        :style="`width:${job.ats_score}%`"
+                        :class="scoreBarColor(job.ats_score)"></div>
+                    </div>
+                    <span class="text-xs font-bold w-10 text-right"
+                      :class="scoreTextColor(job.ats_score)"
+                      x-text="job.ats_score + '%'"></span>
+                  </div>
+                </div>
+
+                <!-- Keywords -->
+                <div x-show="job.matched_keywords && job.matched_keywords.length" class="mt-2 flex flex-wrap gap-1">
+                  <template x-for="kw in (job.matched_keywords || []).slice(0,6)" :key="kw">
+                    <span class="bg-green-50 text-green-700 text-[10px] px-1.5 py-0.5 rounded font-medium" x-text="kw"></span>
+                  </template>
+                  <template x-for="kw in (job.missing_keywords || []).slice(0,3)" :key="kw">
+                    <span class="bg-orange-50 text-orange-600 text-[10px] px-1.5 py-0.5 rounded font-medium line-through" x-text="kw"></span>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Score circle -->
+              <div x-show="job.ats_score != null"
+                class="flex-shrink-0 w-14 h-14 rounded-full flex flex-col items-center justify-center border-2"
+                :class="scoreBorderColor(job.ats_score)">
+                <span class="text-base font-bold leading-none" :class="scoreTextColor(job.ats_score)" x-text="job.ats_score"></span>
+                <span class="text-[9px] text-slate-400">ATS</span>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-2 mt-3 pt-3 border-t border-slate-100" @click.stop>
+
+              <!-- ready -->
+              <template x-if="job.status === 'ready'">
+                <div class="flex gap-2 w-full">
+                  <a :href="job.url" target="_blank"
+                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2 rounded-lg transition flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    Apply on Seek
+                  </a>
+                  <button @click="markApplied(job)"
+                    class="bg-green-100 hover:bg-green-200 text-green-700 text-xs font-semibold px-3 py-2 rounded-lg transition whitespace-nowrap">
+                    ✓ Mark Applied
+                  </button>
+                  <button @click="skipJob(job)"
+                    class="bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-semibold px-3 py-2 rounded-lg transition">
+                    Skip
+                  </button>
+                </div>
+              </template>
+
+              <!-- applied -->
+              <template x-if="job.status === 'applied'">
+                <div class="flex gap-2 w-full items-center">
+                  <span class="flex-1 text-center text-green-700 text-xs font-semibold py-1.5 bg-green-50 rounded-lg">✓ Applied</span>
+                  <a :href="job.url" target="_blank"
+                    class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                    View on Seek ↗
+                  </a>
+                </div>
+              </template>
+
+              <!-- scored / skipped / other -->
+              <template x-if="!['ready','applied'].includes(job.status)">
+                <div class="flex gap-2 w-full">
+                  <span class="flex-1 text-slate-400 text-xs py-1.5"
+                    x-text="job.status === 'skipped' ? 'Skipped' : 'Score below 70%'"></span>
+                  <button x-show="job.status !== 'skipped'" @click="skipJob(job)"
+                    class="bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                    Skip
+                  </button>
+                </div>
+              </template>
+
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ── Detail panel ──────────────────────────────────────────────────── -->
+    <div x-show="selectedJob" class="w-full max-w-lg flex-shrink-0 hidden lg:block">
+      <div class="bg-white rounded-xl border border-slate-200 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+        <template x-if="selectedJob">
+          <div>
+            <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div>
+                <h2 class="font-bold text-slate-900 text-base leading-tight" x-text="selectedJob.title"></h2>
+                <p class="text-slate-500 text-sm mt-0.5">
+                  <span x-text="selectedJob.company"></span> · <span x-text="selectedJob.location"></span>
+                </p>
+                <div x-show="selectedJob.salary" class="text-sm text-slate-600 mt-0.5" x-text="selectedJob.salary"></div>
+              </div>
+              <button @click="selectedJob = null" class="text-slate-400 hover:text-slate-700 p-1">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="p-5">
+              <!-- Match reason -->
+              <div x-show="selectedJob.ats_reason"
+                class="bg-slate-50 rounded-lg p-3 mb-4 text-xs text-slate-600 italic"
+                x-text="selectedJob.ats_reason"></div>
+
+              <!-- Keywords -->
+              <div class="flex flex-wrap gap-1 mb-4">
+                <template x-for="kw in (selectedJob.matched_keywords || [])">
+                  <span class="bg-green-50 border border-green-200 text-green-700 text-[11px] px-2 py-0.5 rounded-full" x-text="'✓ ' + kw"></span>
+                </template>
+                <template x-for="kw in (selectedJob.missing_keywords || [])">
+                  <span class="bg-orange-50 border border-orange-200 text-orange-600 text-[11px] px-2 py-0.5 rounded-full" x-text="'✗ ' + kw"></span>
+                </template>
+              </div>
+
+              <!-- Job description -->
+              <div class="bg-slate-50 rounded-lg p-3 text-xs text-slate-700 leading-relaxed max-h-96 overflow-y-auto">
+                <pre x-text="selectedJob.description"></pre>
+              </div>
+            </div>
+
+            <!-- Panel footer -->
+            <div class="p-5 pt-0 flex gap-2">
+              <template x-if="selectedJob.status === 'ready'">
+                <div class="flex gap-2 w-full">
+                  <a :href="selectedJob.url" target="_blank"
+                    class="flex-1 block text-center bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2.5 rounded-xl transition">
+                    Apply on Seek ↗
+                  </a>
+                  <button @click="markApplied(selectedJob)"
+                    class="bg-green-100 hover:bg-green-200 text-green-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition">
+                    ✓ Applied
+                  </button>
+                </div>
+              </template>
+              <template x-if="selectedJob.status === 'applied'">
+                <a :href="selectedJob.url" target="_blank"
+                  class="w-full block text-center bg-slate-100 text-slate-700 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-200 transition">
+                  View on Seek ↗
+                </a>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- RESUME EDITOR VIEW                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div x-show="view === 'resume'" class="max-w-4xl mx-auto px-6 py-6">
+
+  <template x-if="!personalEdit">
+    <div class="text-center py-20 text-slate-400">
+      <p class="text-4xl mb-3">📄</p>
+      <p>Loading profile...</p>
+    </div>
+  </template>
+
+  <template x-if="personalEdit">
+    <div class="space-y-6">
+
+      <!-- Personal -->
+      <div class="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-4">Personal Information</h2>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Full Name</label>
+            <input x-model="personalEdit.name" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Email</label>
+            <input x-model="personalEdit.email" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+            <input x-model="personalEdit.phone" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Location</label>
+            <input x-model="personalEdit.location" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-4">Skills</h2>
+        <div class="space-y-3">
+          <template x-for="key in Object.keys(skillsEdit || {})" :key="key">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1"
+                x-text="(profile.skills_labels && profile.skills_labels[key]) || key"></label>
+              <input x-model="skillsEdit[key]"
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                placeholder="Comma-separated" />
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Experience -->
+      <div class="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-4">Professional Experience</h2>
+        <div class="space-y-5">
+          <template x-for="(exp, i) in expEdit" :key="i">
+            <div class="border border-slate-100 rounded-xl p-4">
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Role</label>
+                  <input x-model="expEdit[i].role" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Company</label>
+                  <input x-model="expEdit[i].company" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Period</label>
+                  <input x-model="expEdit[i].period" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Location</label>
+                  <input x-model="expEdit[i].location" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+              </div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Bullet Points (one per line)</label>
+              <textarea x-model="expEdit[i].bulletsText" rows="5"
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y font-mono"></textarea>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Projects -->
+      <div class="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-4">Industry Projects</h2>
+        <div class="space-y-5">
+          <template x-for="(proj, i) in projEdit" :key="i">
+            <div class="border border-slate-100 rounded-xl p-4">
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Project Name</label>
+                  <input x-model="projEdit[i].name" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Organisation</label>
+                  <input x-model="projEdit[i].org" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+              </div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Bullet Points (one per line)</label>
+              <textarea x-model="projEdit[i].bulletsText" rows="4"
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y font-mono"></textarea>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Education -->
+      <div class="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-4">Education</h2>
+        <div class="space-y-4">
+          <template x-for="(edu, i) in eduEdit" :key="i">
+            <div class="border border-slate-100 rounded-xl p-4">
+              <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Degree</label>
+                  <input x-model="eduEdit[i].degree" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Institution</label>
+                  <input x-model="eduEdit[i].institution" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Period</label>
+                  <input x-model="eduEdit[i].period" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Bottom save bar -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 flex gap-3">
+        <button @click="saveProfile()"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">
+          Save Profile &amp; Rebuild PDF
+        </button>
+        <button @click="downloadResume()"
+          class="flex-1 bg-slate-700 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-xl transition text-sm">
+          Download Resume PDF
+        </button>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<!-- ── TOAST ─────────────────────────────────────────────────────────────── -->
+<div x-show="toast.show"
+  x-transition:enter="transition ease-out duration-200"
+  x-transition:enter-start="opacity-0 translate-y-4"
+  x-transition:enter-end="opacity-100 translate-y-0"
+  x-transition:leave="transition ease-in duration-150"
+  x-transition:leave-start="opacity-100 translate-y-0"
+  x-transition:leave-end="opacity-0 translate-y-4"
+  :class="{
+    'bg-red-600':    toast.type === 'error',
+    'bg-green-600':  toast.type === 'success',
+    'bg-indigo-600': toast.type === 'info',
+    'bg-slate-800':  !['error','success','info'].includes(toast.type)
+  }"
+  class="fixed bottom-6 right-6 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg z-50 max-w-sm"
+  x-text="toast.message">
+</div>
+
+<!-- ── ALPINE APP ─────────────────────────────────────────────────────────── -->
+<script>
+function app() {
+  return {
+    view:         'jobs',
+    jobs:         [],
+    stats:        {},
+    profile:      {},
+    activeTab:    'ready',
+    searchQuery:  '',
+    selectedJob:  null,
+    scanRunning:  false,
+    scanMessages: [],
+    toast:        { show: false, message: '', type: 'info' },
+
+    // Resume editor
+    personalEdit: null,
+    skillsEdit:   null,
+    expEdit:      null,
+    projEdit:     null,
+    eduEdit:      null,
+
+    tabs: [
+      { key: 'ready',   label: 'Ready to Apply' },
+      { key: 'applied', label: 'Applied'         },
+      { key: 'all',     label: 'All Jobs'        },
+      { key: 'skipped', label: 'Skipped'         },
+    ],
+
+    get filteredJobs() {
+      let list = this.jobs;
+      if (this.activeTab !== 'all') {
+        list = list.filter(j => j.status === this.activeTab);
+      }
+      if (this.searchQuery.trim()) {
+        const q = this.searchQuery.toLowerCase();
+        list = list.filter(j =>
+          (j.title   || '').toLowerCase().includes(q) ||
+          (j.company || '').toLowerCase().includes(q)
+        );
+      }
+      return list;
+    },
+
+    async init() {
+      await Promise.all([this.loadJobs(), this.loadStats(), this.loadProfile()]);
+      setInterval(() => {
+        if (this.scanRunning) {
+          this.loadScanStatus();
+          this.loadJobs();
+          this.loadStats();
+        }
+      }, 3000);
+    },
+
+    async loadJobs() {
+      try {
+        const r = await fetch('/api/jobs');
+        const d = await r.json();
+        this.jobs = d.jobs || [];
+        if (this.selectedJob) {
+          const fresh = this.jobs.find(j => j.id === this.selectedJob.id);
+          if (fresh) this.selectedJob = fresh;
+        }
+      } catch(e) {}
+    },
+
+    async loadStats() {
+      try {
+        const r = await fetch('/api/stats');
+        this.stats = await r.json();
+      } catch(e) {}
+    },
+
+    async loadProfile() {
+      try {
+        const r = await fetch('/api/profile');
+        this.profile = await r.json();
+      } catch(e) {}
+    },
+
+    async loadScanStatus() {
+      try {
+        const r = await fetch('/api/scan/status');
+        const d = await r.json();
+        this.scanRunning  = d.running;
+        this.scanMessages = d.messages || [];
+        this.$nextTick(() => {
+          const el = this.$refs.scanLog;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      } catch(e) {}
+    },
+
+    // ── Resume editor ────────────────────────────────────────────────────────
+
+    loadProfileForEdit() {
+      if (!this.profile || !this.profile.personal) return;
+      this.personalEdit = { ...this.profile.personal };
+      this.skillsEdit = {};
+      for (const [key, arr] of Object.entries(this.profile.skills || {})) {
+        this.skillsEdit[key] = Array.isArray(arr) ? arr.join(', ') : String(arr);
+      }
+      this.expEdit = (this.profile.experience || []).map(e => ({
+        role:        e.role        || '',
+        company:     e.company     || '',
+        period:      e.period      || '',
+        location:    e.location    || '',
+        bulletsText: (e.bullets || []).join('\n'),
+      }));
+      this.projEdit = (this.profile.projects || []).map(p => ({
+        name:        p.name   || '',
+        org:         p.org    || '',
+        period:      p.period || '',
+        bulletsText: (p.bullets || []).join('\n'),
+      }));
+      this.eduEdit = (this.profile.education || []).map(e => ({ ...e }));
+    },
+
+    async saveProfile() {
+      const profile = {
+        personal:      this.personalEdit,
+        skills:        {},
+        skills_labels: this.profile.skills_labels || {},
+        experience: this.expEdit.map(e => ({
+          role:     e.role,
+          company:  e.company,
+          period:   e.period,
+          location: e.location,
+          bullets:  e.bulletsText.split('\n').map(b => b.trim()).filter(Boolean),
+        })),
+        projects: this.projEdit.map(p => ({
+          name:    p.name,
+          org:     p.org,
+          period:  p.period,
+          bullets: p.bulletsText.split('\n').map(b => b.trim()).filter(Boolean),
+        })),
+        education: this.eduEdit,
+      };
+      for (const [key, val] of Object.entries(this.skillsEdit)) {
+        profile.skills[key] = val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      try {
+        const r = await fetch('/api/profile', {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(profile),
+        });
+        if (r.ok) {
+          this.profile = profile;
+          this.showToast('Profile saved! Resume PDF updated.', 'success');
+        } else {
+          this.showToast('Failed to save profile.', 'error');
+        }
+      } catch(e) {
+        this.showToast('Error: ' + e.message, 'error');
+      }
+    },
+
+    downloadResume() {
+      const a = document.createElement('a');
+      a.href     = '/api/resume/download';
+      a.download = 'Antone_Martin_Resume.pdf';
+      a.click();
+    },
+
+    // ── Jobs actions ─────────────────────────────────────────────────────────
+
+    async startScan() {
+      try {
+        const r = await fetch('/api/scan', { method: 'POST' });
+        const d = await r.json();
+        if (d.status === 'already_running') {
+          this.showToast('Scan already running.', 'info');
+        } else {
+          this.scanRunning = true;
+          this.showToast('Scan started — Quick Apply jobs scoring ≥ 70% will appear in Ready tab.', 'info');
+        }
+      } catch(e) { this.showToast('Could not start scan.', 'error'); }
+    },
+
+    async clearJobs() {
+      if (!confirm('Clear all jobs from the dashboard?')) return;
+      try {
+        await fetch('/api/jobs', { method: 'DELETE' });
+        this.jobs       = [];
+        this.selectedJob = null;
+        await this.loadStats();
+        this.showToast('All jobs cleared.', 'info');
+      } catch(e) { this.showToast('Could not clear jobs.', 'error'); }
+    },
+
+    async markApplied(job) {
+      try {
+        await fetch(`/api/jobs/${job.id}/mark_applied`, { method: 'POST' });
+        await this.loadJobs();
+        await this.loadStats();
+        this.showToast('Marked as applied!', 'success');
+      } catch(e) {}
+    },
+
+    async skipJob(job) {
+      try {
+        await fetch(`/api/jobs/${job.id}/skip`, { method: 'POST' });
+        await this.loadJobs();
+        await this.loadStats();
+        if (this.selectedJob && this.selectedJob.id === job.id) this.selectedJob = null;
+      } catch(e) {}
+    },
+
+    openPanel(job) {
+      this.selectedJob = (this.selectedJob && this.selectedJob.id === job.id) ? null : job;
+    },
+
+    showToast(message, type = 'info') {
+      this.toast = { show: true, message, type };
+      setTimeout(() => { this.toast.show = false; }, 4500);
+    },
+
+    statusLabel(status) {
+      return { new:'new', scored:'scored', ready:'ready', applied:'applied', skipped:'skipped' }[status] || status;
+    },
+
+    statusBadgeClass(status) {
+      return {
+        new:     'bg-slate-100 text-slate-500',
+        scored:  'bg-yellow-50 text-yellow-700',
+        ready:   'bg-indigo-100 text-indigo-700',
+        applied: 'bg-green-100 text-green-700',
+        skipped: 'bg-slate-100 text-slate-400',
+      }[status] || 'bg-slate-100 text-slate-500';
+    },
+
+    scoreBarColor(s)    { return s >= 90 ? 'bg-green-500'  : s >= 70 ? 'bg-indigo-400' : 'bg-orange-400'; },
+    scoreTextColor(s)   { return s >= 90 ? 'text-green-700': s >= 70 ? 'text-indigo-700' : 'text-orange-600'; },
+    scoreBorderColor(s) { return s >= 90 ? 'border-green-400': s >= 70 ? 'border-indigo-400' : 'border-orange-400'; },
+  };
+}
+</script>
+</body>
+</html>
